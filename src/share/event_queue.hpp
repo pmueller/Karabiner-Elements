@@ -155,6 +155,12 @@ public:
   event_queue(void) {
   }
 
+
+  // XXX key chatter hack
+  key_code previous_key_code_ = key_code(0);
+  uint64_t previous_time_stamp_ = uint64_t(0);
+  int64_t previous_integer_value_ = int64_t(0);
+
   // from physical device
   void emplace_back_event(device_id device_id,
                           uint64_t time_stamp,
@@ -162,9 +168,19 @@ public:
                           hid_usage usage,
                           int64_t integer_value) {
     if (auto key_code = types::get_key_code(usage_page, usage)) {
-      queued_event::event event(*key_code, integer_value ? event_type::key_down : event_type::key_up);
-      emplace_back_event(device_id, time_stamp, event, event);
+      // XXX key chatter hack
+      // timestamps are in nanoseconds, so 42000000 is 42milliseconds
+      if (*key_code == previous_key_code_ && (time_stamp - previous_time_stamp_) < uint64_t(42000000)) {
+        // probably key chatter, don't enqueue the event
+        logger::get_logger().info("Blocked a key chatter event");
+      } else {
+        queued_event::event event(*key_code, integer_value ? event_type::key_down : event_type::key_up);
+        emplace_back_event(device_id, time_stamp, event, event);
+      }
 
+      previous_key_code_ = *key_code;
+      previous_time_stamp_ = time_stamp;
+      previous_integer_value_ = integer_value;
     } else if (auto pointing_button = types::get_pointing_button(usage_page, usage)) {
       queued_event::event event(*pointing_button, integer_value ? event_type::key_down : event_type::key_up);
       emplace_back_event(device_id, time_stamp, event, event);
